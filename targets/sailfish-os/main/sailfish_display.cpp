@@ -67,6 +67,7 @@ int env_int(const char *name, int fallback, int lo, int hi)
 int g_canvas_width = env_int("GEA_SAILFISH_WIDTH", gea::platform::display::kWidth, 64, 4096);
 int g_canvas_height = env_int("GEA_SAILFISH_HEIGHT", gea::platform::display::kHeight, 64, 4096);
 int g_window_scale = env_int("GEA_SAILFISH_SCALE", 1, 1, 8);
+int g_panel_short_side = 0;
 
 gea::framework::graphics::Canvas g_canvas;
 NativePixel *g_framebuffer = nullptr;
@@ -148,6 +149,21 @@ void ensure_window()
 		std::fprintf(stderr, "[sailfish display] SDL_CreateRenderer failed: %s\n", SDL_GetError());
 		return;
 	}
+	// Commit an initial blank frame and pump Wayland events so Lipstick can
+	// deliver its cutout-adjusted surface size (e.g. 720x1527 on a 720x1600
+	// panel with a top notch) before we size the framebuffer/texture and call
+	// Application::init(). Capture the pre-settle short side first so cutouts
+	// never reduce the physical panel short side used for auto DPR.
+	{
+		int pre_w = 0, pre_h = 0;
+		if (SDL_GetRendererOutputSize(g_renderer, &pre_w, &pre_h) == 0 && pre_w > 0 && pre_h > 0) {
+			g_panel_short_side = std::max(g_panel_short_side, std::min(pre_w, pre_h));
+		}
+		SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
+		SDL_RenderClear(g_renderer);
+		SDL_RenderPresent(g_renderer);
+		SDL_PumpEvents();
+	}
 	// The canvas covers the renderer's output in physical pixels (divided by
 	// scale), not the window size: under a Wayland output scale the window size
 	// is in points, and a points-sized canvas stretched to the output made every
@@ -155,6 +171,7 @@ void ensure_window()
 	{
 		int output_w = 0, output_h = 0;
 		if (SDL_GetRendererOutputSize(g_renderer, &output_w, &output_h) == 0 && output_w > 0 && output_h > 0) {
+			g_panel_short_side = std::max(g_panel_short_side, std::min(output_w, output_h));
 			const int w = std::clamp(output_w / g_window_scale, 64, 4096);
 			const int h = std::clamp(output_h / g_window_scale, 64, 4096);
 			if (w != g_canvas_width || h != g_canvas_height) {
@@ -312,11 +329,10 @@ extern "C" double sailfish_display_output_ratio()
 // loop derives the "auto" DPR from it. Returns 0 before SDL is up.
 extern "C" int sailfish_display_panel_short_side()
 {
-	static int panel = 0;
 	int w = 0, h = 0;
 	if (g_sdl_ok && SDL_GetRendererOutputSize(g_renderer, &w, &h) == 0 && w > 0 && h > 0)
-		panel = std::max(panel, std::min(w, h));
-	return panel;
+		g_panel_short_side = std::max(g_panel_short_side, std::min(w, h));
+	return g_panel_short_side;
 }
 extern "C" Uint32 sailfish_display_window_id() { return g_window ? SDL_GetWindowID(g_window) : 0; }
 extern "C" bool sailfish_display_keyboard_focus() { return g_window && (SDL_GetWindowFlags(g_window) & SDL_WINDOW_INPUT_FOCUS); }

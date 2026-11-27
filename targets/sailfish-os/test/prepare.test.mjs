@@ -123,7 +123,7 @@ async function test(name, fn) {
 }
 
 await test('prepare.mjs stages complete project for aarch64, armv7hl, and i486', async () => {
-  for (const [arch, expectedDpr] of [['aarch64', '0'], ['armv7hl', '0'], ['i486', '1']]) {
+  for (const [arch, expectedDpr] of [['aarch64', '0'], ['armv7hl', '0'], ['i486', '0']]) {
     const res = runPrepare(appDir, arch, coreRepo)
     assert.equal(res.status, 0, `prepare failed for ${arch}:\n${res.stdout}\n${res.stderr}`)
 
@@ -168,7 +168,13 @@ await test('prepare.mjs stages complete project for aarch64, armv7hl, and i486',
 
     const spec = fs.readFileSync(path.join(stage, 'rpm/harbour-gea-sample-app.spec'), 'utf8')
     assert.match(spec, /Version: 1\.2\.3~rc\.1/)
+    assert.match(spec, /URL: https:\/\//)
     assert.match(spec, /BuildRequires: pkgconfig\(glib-2\.0\)/)
+    assert.match(spec, /%changelog\n\* .* - 1\.2\.3~rc\.1-1\n/)
+
+    const cmake = fs.readFileSync(path.join(stage, 'CMakeLists.txt'), 'utf8')
+    assert.match(cmake, /-fPIE/)
+    assert.match(cmake, /-pie/)
   }
 })
 
@@ -208,7 +214,7 @@ await test('prepare.mjs fails cleanly on invalid arch, version mismatch, missing
   assert.match(noEntryRes.stderr, /app entry missing/)
 })
 
-await test('sailfish_main.cpp keeps required SDL keyboard and lifecycle wiring', () => {
+await test('sailfish_main.cpp keeps required SDL keyboard, early font init, and lifecycle wiring', () => {
   const mainCpp = fs.readFileSync(path.join(targetDir, 'main/sailfish_main.cpp'), 'utf8')
   for (const needle of [
     'case SDL_WINDOWEVENT_CLOSE:',
@@ -218,6 +224,8 @@ await test('sailfish_main.cpp keeps required SDL keyboard and lifecycle wiring',
     'g_keyboard.accept(event)',
     'PULSE_PROP_media.role',
     'sailfish_keyboard_update(-1, false)',
+    '__attribute__((constructor(200)))',
+    'gea::sailfish::fonts::install()',
   ]) {
     assert.ok(mainCpp.includes(needle), `sailfish_main.cpp missing ${needle}`)
   }

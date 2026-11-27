@@ -31,6 +31,16 @@ const appPath = (appDir, value, name, kind) => {
   return { relative: relative.split(path.sep).join('/'), absolute: real }
 }
 
+const normalizeRpmUrl = (value) => {
+  if (typeof value !== 'string') return null
+  let url = value.trim()
+  if (!url) return null
+  if (url.startsWith('git+http://') || url.startsWith('git+https://')) url = url.slice(4)
+  if (url.endsWith('.git')) url = url.slice(0, -4)
+  if (!/^https?:\/\/\S+$/.test(url) || /[\x00-\x1f\x7f%\\";$]/.test(url)) return null
+  return url
+}
+
 export function readSailfishConfig(appDir, meta) {
   const app = meta.gea
   if (!app?.id || !/^[a-z0-9][a-z0-9-]*$/.test(app.id)) throw new Error('gea.id must be a lowercase package identifier')
@@ -39,6 +49,9 @@ export function readSailfishConfig(appDir, meta) {
   if (/[\x00-\x1f\x7f%\\";$]/.test(appName)) throw new Error('gea.name must not contain control characters or RPM/CMake syntax')
   if (/[\x00-\x1f\x7f%]/.test(rpmLicense)) throw new Error('package license must not contain control characters or RPM macros')
   const sailfish = app.sailfish || {}
+  if (sailfish.url !== undefined && !normalizeRpmUrl(sailfish.url)) throw new Error('gea.sailfish.url must be a valid http(s) URL without control characters or RPM macros')
+  const repoUrl = typeof meta.repository === 'string' ? meta.repository : meta.repository?.url
+  const rpmUrl = normalizeRpmUrl(sailfish.url) || normalizeRpmUrl(meta.homepage) || normalizeRpmUrl(repoUrl) || 'https://github.com/geastack/linux'
   const organizationName = sailfish.organizationName || 'org.geastack'
   const applicationName = sailfish.applicationName || app.id.replaceAll('-', '_')
   const permissions = sailfish.permissions || []
@@ -72,6 +85,7 @@ export function readSailfishConfig(appDir, meta) {
     icons: app.icons || {},
     appName,
     rpmLicense,
+    rpmUrl,
     rpmVersion,
     packageName: `harbour-gea-${app.id}`,
     organizationName,
@@ -87,19 +101,20 @@ export function readSailfishConfig(appDir, meta) {
 }
 
 // Integer DPRs an "auto" build is expected to pick on Sailfish phones: 2 on
-// 720-pixel-wide panels (Jolla C2) and 3 on 1080-pixel-wide panels (Xperia XA2,
-// Xperia 10 through 10 V, Jolla Phone). Build-time fonts are generated for both;
-// other sizes fall back to the runtime TTF rasterizer.
+// 720-pixel-wide panels (Jolla C2 and the Sailfish 5.1 emulator) and 3 on
+// 1080-pixel-wide panels (Xperia XA2, Xperia 10 through 10 V, Jolla Phone).
+// Build-time fonts are generated for both; other sizes (e.g. 540x960 at 1x)
+// fall back to the runtime TTF rasterizer.
 const PHONE_DENSITIES = [2, 3]
 
 // The DPR compiled into the executable (0: derive an integer DPR from the
 // panel at startup, see sailfish_main.cpp) and the ratios fonts are generated
-// for. "auto" is panel-derived on ARM phones; the x86 emulator keeps one CSS
-// pixel per canvas pixel.
-export function sailfishDensity(config, arch) {
+// for. "auto" is panel-derived on every architecture (including the i486
+// emulator, whose 720x1600 panel matches Jolla C2 while smaller 540x960
+// panels still resolve to DPR 1).
+export function sailfishDensity(config, _arch) {
   const ratio = config.devicePixelRatio
   if (ratio !== 'auto') return { runtime: ratio, fontRatios: [ratio] }
-  if (arch === 'i486') return { runtime: 1, fontRatios: [1] }
   return { runtime: 0, fontRatios: [...PHONE_DENSITIES] }
 }
 
@@ -115,5 +130,5 @@ export function desktopEntry(config) {
 
 export function rpmSpec(config) {
   const buildRequires = [...new Set(['cmake', 'pkgconfig(sdl2)', 'pkgconfig(libcurl)', 'pkgconfig(gio-2.0)', ...config.pkgConfigModules.map((name) => `pkgconfig(${name})`)])]
-  return `Name: ${config.packageName}\nVersion: ${config.rpmVersion}\nRelease: 1\nSummary: Gea ${config.appName} for Sailfish OS\nLicense: ${config.rpmLicense}\n${buildRequires.map((item) => `BuildRequires: ${item}\n`).join('')}\n%description\nGea JSX application for Sailfish OS.\n\n%build\n%cmake .\n%make_build\n\n%install\n%make_install\n\n%files\n%{_bindir}/${config.packageName}\n%{_datadir}/applications/${config.packageName}.desktop\n%{_datadir}/icons/hicolor/*/apps/${config.packageName}.png\n`
+  return `Name: ${config.packageName}\nVersion: ${config.rpmVersion}\nRelease: 1\nSummary: Gea ${config.appName} for Sailfish OS\nLicense: ${config.rpmLicense}\nURL: ${config.rpmUrl}\n${buildRequires.map((item) => `BuildRequires: ${item}\n`).join('')}\n%description\nGea JSX application for Sailfish OS.\n\n%build\n%cmake .\n%make_build\n\n%install\n%make_install\n%{!?__debug_package:strip --strip-all %{buildroot}%{_bindir}/%{name}}\n\n%files\n%{_bindir}/${config.packageName}\n%{_datadir}/applications/${config.packageName}.desktop\n%{_datadir}/icons/hicolor/*/apps/${config.packageName}.png\n\n%changelog\n* Wed Jan 01 2025 GeaStack <dev@geastack.dev> - ${config.rpmVersion}-1\n- Package ${config.rpmVersion} for Sailfish OS.\n`
 }

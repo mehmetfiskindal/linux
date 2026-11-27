@@ -17,6 +17,7 @@ add_executable(${GEA_PACKAGE_NAME} ${GEA_C_SOURCES} ${GEA_CXX_SOURCES})
 target_include_directories(${GEA_PACKAGE_NAME} PRIVATE ${GEA_INCLUDE_DIRS})
 target_compile_options(${GEA_PACKAGE_NAME} PRIVATE
   $<$<COMPILE_LANGUAGE:CXX>:-include${CMAKE_CURRENT_SOURCE_DIR}/platform/include/sailfish_prelude.h>
+  -fPIE
   -funwind-tables)
 target_compile_definitions(${GEA_PACKAGE_NAME} PRIVATE
   GEA_EMBEDDED_HAS_GENERATED_FONTS=1
@@ -41,7 +42,7 @@ foreach(GEA_APP_PKG_MODULE IN LISTS GEA_APP_PKG_MODULES)
   target_link_libraries(${GEA_PACKAGE_NAME} PRIVATE PkgConfig::${GEA_APP_PKG_PREFIX})
 endforeach()
 target_link_libraries(${GEA_PACKAGE_NAME} PRIVATE ${GEA_APP_SYSTEM_LIBRARIES})
-target_link_options(${GEA_PACKAGE_NAME} PRIVATE -Wl,--export-dynamic)
+target_link_options(${GEA_PACKAGE_NAME} PRIVATE -pie -Wl,--export-dynamic)
 
 install(TARGETS ${GEA_PACKAGE_NAME} RUNTIME DESTINATION bin)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${GEA_PACKAGE_NAME}.desktop DESTINATION share/applications)

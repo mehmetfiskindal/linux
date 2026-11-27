@@ -21,22 +21,23 @@ int main()
 	assert(parseEnvDpr("0.2", 0.0) == 0.0);   // below 0.5 -> fallback
 	assert(parseEnvDpr("12", 1.0) == 1.0);    // above 8.0 -> fallback
 
-	// 2. Auto DPR on ARM devices (appDpr == 0.0) matches README device table:
-	// Jolla C2: 720x1600 -> DPR 2 (CSS width 360)
+	// 2. Auto DPR (appDpr == 0.0) matches README device table across ARM & i486:
+	// Jolla C2 & Sailfish 5.1 emulator: 720x1600 -> DPR 2 (CSS width 360)
 	assert(effectiveDevicePixelRatio(0.0, 1.0, 1, 720) == 2.0);
 	// Xperia XA2 / Xperia 10..10 V / Jolla Phone (2026): 1080px short side -> DPR 3 (CSS width 360)
 	assert(effectiveDevicePixelRatio(0.0, 1.0, 1, 1080) == 3.0);
-	// Smaller panel (< 720px) clamps to at least 1
+	// Smaller 540x960 emulator / <720px panel still resolves to DPR 1 under auto
+	assert(effectiveDevicePixelRatio(0.0, 1.0, 1, 540) == 1.0);
 	assert(effectiveDevicePixelRatio(0.0, 1.0, 1, 480) == 1.0);
 	// Window scale divides panel short side
 	assert(effectiveDevicePixelRatio(0.0, 1.0, 2, 1080) == 1.0);
 
-	// 3. i486 emulator default (appDpr == 1.0)
-	assert(effectiveDevicePixelRatio(1.0, 1.0, 1, 540) == 1.0);
+	// 3. Explicit 1x override (e.g. GEA_SAILFISH_DPR=1)
+	assert(effectiveDevicePixelRatio(1.0, 1.0, 1, 720) == 1.0);
 
 	// 4. Explicit app DPR multiplies by Wayland output ratio
 	assert(std::fabs(effectiveDevicePixelRatio(2.0, 1.5, 1, 1080) - 3.0) < 1e-9);
 
-	std::puts("PASS sailfish_dpr: Jolla C2 (2x), Xperia/Jolla Phone (3x), i486 (1x), env overrides, output ratio");
+	std::puts("PASS sailfish_dpr: Jolla C2/emu 720 (2x), Xperia/Jolla Phone 1080 (3x), 540 auto (1x), env overrides, output ratio");
 	return 0;
 }

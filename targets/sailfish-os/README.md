@@ -108,30 +108,46 @@ pixel at scale 1. DPR controls canvas pixels per CSS pixel, while scale controls
 presentation magnification. CMake defaults to a Release build.
 
 `gea.sailfish.devicePixelRatio` in the app's `package.json` sets the CSS
-density. It defaults to `"auto"`. On ARM builds (`aarch64`, `armv7hl`) auto is
-pixel-perfect: the executable takes the largest integer DPR that keeps the
-panel's short side at least 360 CSS pixels, so every CSS pixel is a whole NxN
-block of panel pixels and edges never fall between pixels. The DPR is derived
-from the panel, not the window, so it does not change when the on-screen
-keyboard shrinks the window. On the current Sailfish phones this gives:
+density. It defaults to `"auto"`. Across all architectures (`aarch64`,
+`armv7hl`, and the `i486` emulator) auto is pixel-perfect: the executable takes
+the largest integer DPR that keeps the panel's short side at least 360 CSS
+pixels, so every CSS pixel is a whole NxN block of panel pixels and edges never
+fall between pixels. The DPR is derived from the panel, not the window, so it
+does not change when the on-screen keyboard or display cutout shrinks the
+window. On current Sailfish phones and emulators this gives:
 
 | Device | Panel | Auto DPR | CSS viewport |
 |---|---|---|---|
-| Jolla C2 | 720x1600 | 2 | 360x800 |
+| Sailfish emulator (540p) | 540x960 | 1 | 540x960 |
+| Jolla C2 / Sailfish 5.1 emulator | 720x1600 | 2 | 360x800 |
 | Xperia XA2, XA2 Plus, XA2 Ultra | 1080x1920 (XA2 Plus 1080x2160) | 3 | 360x640 (360x720) |
 | Xperia 10, 10 Plus, 10 II, 10 III, 10 IV, 10 V | 1080x2520 | 3 | 360x840 |
 | Jolla Phone (2026) | 1080x2340 | 3 | 360x780 |
 
-On the i486 emulator, auto is 1 (one CSS pixel per canvas pixel). A number
-(0.5 to 8) is used as given on every architecture and multiplied by the Wayland
-output scale (physical pixels per window point). `GEA_SAILFISH_DPR` (a number or
-`auto`) overrides the setting at runtime; the startup log shows the chosen DPR
-and CSS viewport. A non-integer DPR is not pixel-perfect: CSS edges can land
-between panel pixels.
+A number (0.5 to 8) is used as given on every architecture and multiplied by the
+Wayland output scale (physical pixels per window point). `GEA_SAILFISH_DPR` (a
+number such as `1`, or `auto`) overrides the setting at runtime; the startup log
+shows the chosen DPR and CSS viewport. A non-integer DPR is not pixel-perfect:
+CSS edges can land between panel pixels.
+
+At startup, `sailfish_display.cpp` commits an initial blank frame and pumps
+Wayland events before returning from `Display::init()` so Lipstick's initial
+cutout-adjusted surface geometry (such as `720x1527` on a notched `720x1600`
+panel) is applied before `Application::init()`. The reserved top cutout band
+itself is managed by the Lipstick compositor.
 
 Font generation uses the initial 410x502 viewport and the app's DPR; an auto
-ARM build generates fonts for DPR 2 and 3. Runtime TTF fonts adapt to the
-current viewport and DPR after resize.
+build generates fonts for DPR 2 and 3. Runtime TTF fonts adapt to the current
+viewport and DPR after resize. System TTF fonts under `/usr/share/fonts/`
+(Regular, Bold, Italic, and BoldItalic faces for Liberation/DejaVu/Sail Sans
+Pro) are installed via an early constructor (`constructor(200)`) before
+default-priority static CSS registrations execute, while app-bundled
+`@font-face` families always take precedence.
+
+Release RPMs compile and link as Position-Independent Executables (`-fPIE
+-pie`), strip the installed binary when debug packages are disabled, and emit
+`URL` (from `gea.sailfish.url`, `homepage`, or `repository`) and `%changelog`
+metadata so `sfdk check` (`harbour` + `rpmlint`) stays clean.
 
 Fonts declared with `@font-face` are embedded as TTF files and rasterized at
 runtime. Character coverage depends on the core checkout's runtime TTF

@@ -27,6 +27,21 @@ inline constexpr int kSlotSerif = 1;
 inline constexpr int kSlotMono = 2;
 inline constexpr int kSlotCount = 3;
 
+inline constexpr int kStyleRegular = 0;
+inline constexpr int kStyleBold = 1;
+inline constexpr int kStyleItalic = 2;
+inline constexpr int kStyleBoldItalic = 3;
+inline constexpr int kStyleCount = 4;
+
+inline int classifyFontStyle(int weight, bool italic = false)
+{
+	const bool bold = weight >= 600;
+	if (bold && italic) return kStyleBoldItalic;
+	if (bold) return kStyleBold;
+	if (italic) return kStyleItalic;
+	return kStyleRegular;
+}
+
 inline std::string normalizeFamilyName(const char *raw)
 {
 	if (!raw) return {};
@@ -45,9 +60,8 @@ inline std::string normalizeFamilyName(const char *raw)
 	return out;
 }
 
-inline int classifySystemSlot(const char *family)
+inline int classifySingleFamily(const std::string &name)
 {
-	const std::string name = normalizeFamilyName(family);
 	if (name.empty()) return -1;
 	if (name == "sans-serif" || name == "sans" || name == "system-ui" || name == "-apple-system" ||
 	    name == "ui-sans-serif" || name == "sail sans pro" || name == "sailsanspro" ||
@@ -63,6 +77,24 @@ inline int classifySystemSlot(const char *family)
 	    name == "dejavu sans mono" || name == "courier" || name == "courier new" ||
 	    name == "menlo" || name == "consolas") {
 		return kSlotMono;
+	}
+	return -1;
+}
+
+inline int classifySystemSlot(const char *family)
+{
+	if (!family || !*family) return -1;
+	if (!std::strchr(family, ',')) {
+		return classifySingleFamily(normalizeFamilyName(family));
+	}
+	const char *p = family;
+	while (*p) {
+		const char *comma = std::strchr(p, ',');
+		std::string token = comma ? std::string(p, static_cast<std::size_t>(comma - p)) : std::string(p);
+		const int slot = classifySingleFamily(normalizeFamilyName(token.c_str()));
+		if (slot >= 0) return slot;
+		if (!comma) break;
+		p = comma + 1;
 	}
 	return -1;
 }
@@ -85,8 +117,8 @@ struct SystemFontSlot {
 };
 
 struct SystemFontState {
-	SystemFontSlot slots[kSlotCount];
-	std::vector<std::string> customPaths[kSlotCount];
+	SystemFontSlot slots[kSlotCount][kStyleCount];
+	std::vector<std::string> customPaths[kSlotCount][kStyleCount];
 	bool installed = false;
 };
 
@@ -119,44 +151,111 @@ inline bool readFileBytes(const char *path, std::vector<std::uint8_t> &out)
 	return true;
 }
 
-inline const char *const *defaultCandidatesForSlot(int slot)
+inline const char *const *defaultCandidatesForSlot(int slot, int style = kStyleRegular)
 {
-	static const char *const kSans[] = {
+	static const char *const kSansRegular[] = {
 	    "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
 	    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
 	    "/usr/share/fonts/sail-sans-pro/SailSansPro-Light.ttf",
 	    nullptr,
 	};
-	static const char *const kSerif[] = {
+	static const char *const kSansBold[] = {
+	    "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+	    "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+	    "/usr/share/fonts/dejavu/DejaVuSansCondensed-Bold.ttf",
+	    nullptr,
+	};
+	static const char *const kSansItalic[] = {
+	    "/usr/share/fonts/liberation/LiberationSans-Italic.ttf",
+	    "/usr/share/fonts/dejavu/DejaVuSans-Oblique.ttf",
+	    nullptr,
+	};
+	static const char *const kSansBoldItalic[] = {
+	    "/usr/share/fonts/liberation/LiberationSans-BoldItalic.ttf",
+	    "/usr/share/fonts/dejavu/DejaVuSans-BoldOblique.ttf",
+	    nullptr,
+	};
+
+	static const char *const kSerifRegular[] = {
 	    "/usr/share/fonts/liberation/LiberationSerif-Regular.ttf",
 	    "/usr/share/fonts/dejavu/DejaVuSerif.ttf",
 	    nullptr,
 	};
-	static const char *const kMono[] = {
+	static const char *const kSerifBold[] = {
+	    "/usr/share/fonts/liberation/LiberationSerif-Bold.ttf",
+	    "/usr/share/fonts/dejavu/DejaVuSerif-Bold.ttf",
+	    nullptr,
+	};
+	static const char *const kSerifItalic[] = {
+	    "/usr/share/fonts/liberation/LiberationSerif-Italic.ttf",
+	    "/usr/share/fonts/dejavu/DejaVuSerif-Italic.ttf",
+	    nullptr,
+	};
+	static const char *const kSerifBoldItalic[] = {
+	    "/usr/share/fonts/liberation/LiberationSerif-BoldItalic.ttf",
+	    "/usr/share/fonts/dejavu/DejaVuSerif-BoldItalic.ttf",
+	    nullptr,
+	};
+
+	static const char *const kMonoRegular[] = {
 	    "/usr/share/fonts/liberation/LiberationMono-Regular.ttf",
 	    "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
 	    nullptr,
 	};
+	static const char *const kMonoBold[] = {
+	    "/usr/share/fonts/liberation/LiberationMono-Bold.ttf",
+	    "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf",
+	    nullptr,
+	};
+	static const char *const kMonoItalic[] = {
+	    "/usr/share/fonts/liberation/LiberationMono-Italic.ttf",
+	    "/usr/share/fonts/dejavu/DejaVuSansMono-Oblique.ttf",
+	    nullptr,
+	};
+	static const char *const kMonoBoldItalic[] = {
+	    "/usr/share/fonts/liberation/LiberationMono-BoldItalic.ttf",
+	    "/usr/share/fonts/dejavu/DejaVuSansMono-BoldOblique.ttf",
+	    nullptr,
+	};
+
 	switch (slot) {
-	case kSlotSans: return kSans;
-	case kSlotSerif: return kSerif;
-	case kSlotMono: return kMono;
+	case kSlotSans:
+		switch (style) {
+		case kStyleBold: return kSansBold;
+		case kStyleItalic: return kSansItalic;
+		case kStyleBoldItalic: return kSansBoldItalic;
+		default: return kSansRegular;
+		}
+	case kSlotSerif:
+		switch (style) {
+		case kStyleBold: return kSerifBold;
+		case kStyleItalic: return kSerifItalic;
+		case kStyleBoldItalic: return kSerifBoldItalic;
+		default: return kSerifRegular;
+		}
+	case kSlotMono:
+		switch (style) {
+		case kStyleBold: return kMonoBold;
+		case kStyleItalic: return kMonoItalic;
+		case kStyleBoldItalic: return kMonoBoldItalic;
+		default: return kMonoRegular;
+		}
 	default: return nullptr;
 	}
 }
 
-inline bool ensureSlotLoaded(int slot)
+inline bool ensureSlotLoaded(int slot, int style = kStyleRegular)
 {
-	if (slot < 0 || slot >= kSlotCount) return false;
+	if (slot < 0 || slot >= kSlotCount || style < 0 || style >= kStyleCount) return false;
 	auto &s = state();
-	auto &entry = s.slots[slot];
+	auto &entry = s.slots[slot][style];
 	if (entry.attempted) return !entry.bytes.empty();
 	entry.attempted = true;
 
-	for (const auto &custom : s.customPaths[slot]) {
+	for (const auto &custom : s.customPaths[slot][style]) {
 		if (readFileBytes(custom.c_str(), entry.bytes)) return true;
 	}
-	if (const char *const *candidates = defaultCandidatesForSlot(slot)) {
+	if (const char *const *candidates = defaultCandidatesForSlot(slot, style)) {
 		for (int i = 0; candidates[i]; ++i) {
 			if (readFileBytes(candidates[i], entry.bytes)) return true;
 		}
@@ -167,13 +266,40 @@ inline bool ensureSlotLoaded(int slot)
 inline int lookupFamily(const char *family)
 {
 	if (!family || !*family) return -1;
-	// Never shadow an app-bundled @font-face family.
+	// Never shadow an app-bundled @font-face family (exact or quote/space-trimmed).
 	if (gea::framework::graphics::generated::lookupFontFamily(family) >= 0) return -1;
-	const int slot = classifySystemSlot(family);
+	int slot = -1;
+	const char *p = family;
+	while (*p) {
+		const char *comma = std::strchr(p, ',');
+		std::string rawToken = comma ? std::string(p, static_cast<std::size_t>(comma - p)) : std::string(p);
+		// Trim spaces and outer quotes before probing app-bundled families.
+		std::size_t start = 0;
+		while (start < rawToken.size() && std::isspace(static_cast<unsigned char>(rawToken[start]))) ++start;
+		std::size_t end = rawToken.size();
+		while (end > start && std::isspace(static_cast<unsigned char>(rawToken[end - 1]))) --end;
+		if (end - start >= 2 &&
+		    ((rawToken[start] == '"' && rawToken[end - 1] == '"') ||
+		     (rawToken[start] == '\'' && rawToken[end - 1] == '\''))) {
+			++start;
+			--end;
+		}
+		const std::string trimmed = rawToken.substr(start, end - start);
+		if (!trimmed.empty() && gea::framework::graphics::generated::lookupFontFamily(trimmed.c_str()) >= 0) {
+			return -1;
+		}
+		const int candidate = classifySingleFamily(normalizeFamilyName(trimmed.c_str()));
+		if (candidate >= 0) {
+			slot = candidate;
+			break;
+		}
+		if (!comma) break;
+		p = comma + 1;
+	}
 	if (slot < 0) return -1;
-	if (ensureSlotLoaded(slot)) return kSystemFamilyBase + slot;
+	if (ensureSlotLoaded(slot, kStyleRegular)) return kSystemFamilyBase + slot;
 	// Fall back to sans-serif if serif/monospace font is absent on device.
-	if (slot != kSlotSans && ensureSlotLoaded(kSlotSans)) return kSystemFamilyBase + kSlotSans;
+	if (slot != kSlotSans && ensureSlotLoaded(kSlotSans, kStyleRegular)) return kSystemFamilyBase + kSlotSans;
 	return -1;
 }
 
@@ -183,32 +309,104 @@ inline const char *familyName(int familyId)
 	return slotCanonicalName(familyId - kSystemFamilyBase);
 }
 
+inline const std::uint8_t *fontBytesForSlotStyle(int slot, int style, unsigned long *length)
+{
+	if (slot < 0 || slot >= kSlotCount) return nullptr;
+	int order[kStyleCount] = {kStyleRegular, kStyleRegular, kStyleRegular, kStyleRegular};
+	int count = 0;
+	switch (style) {
+	case kStyleBoldItalic:
+		order[count++] = kStyleBoldItalic;
+		order[count++] = kStyleBold;
+		order[count++] = kStyleItalic;
+		order[count++] = kStyleRegular;
+		break;
+	case kStyleBold:
+		order[count++] = kStyleBold;
+		order[count++] = kStyleRegular;
+		break;
+	case kStyleItalic:
+		order[count++] = kStyleItalic;
+		order[count++] = kStyleRegular;
+		break;
+	default:
+		order[count++] = kStyleRegular;
+		break;
+	}
+	for (int i = 0; i < count; ++i) {
+		if (ensureSlotLoaded(slot, order[i])) {
+			const auto &bytes = state().slots[slot][order[i]].bytes;
+			if (length) *length = static_cast<unsigned long>(bytes.size());
+			return bytes.data();
+		}
+	}
+	return nullptr;
+}
+
 inline const std::uint8_t *fontBytes(int familyId, unsigned long *length)
 {
 	if (familyId < kSystemFamilyBase || familyId >= kSystemFamilyBase + kSlotCount) return nullptr;
-	const int slot = familyId - kSystemFamilyBase;
-	if (!ensureSlotLoaded(slot)) return nullptr;
-	const auto &bytes = state().slots[slot].bytes;
-	if (length) *length = static_cast<unsigned long>(bytes.size());
-	return bytes.data();
+	return fontBytesForSlotStyle(familyId - kSystemFamilyBase, kStyleRegular, length);
 }
 
-inline const gea::framework::graphics::RuntimeFontProvider kProvider = {
-    lookupFamily,
-    familyName,
-    fontBytes,
-};
+inline const std::uint8_t *fontBytesForStyle(int familyId, int weight, int stretch, unsigned long *length)
+{
+	(void)stretch;
+	if (familyId < kSystemFamilyBase || familyId >= kSystemFamilyBase + kSlotCount) return nullptr;
+	return fontBytesForSlotStyle(familyId - kSystemFamilyBase, classifyFontStyle(weight, false), length);
+}
+
+inline const std::uint8_t *fontBytesForStyleItalic(int familyId, int weight, int stretch, bool italic, unsigned long *length)
+{
+	(void)stretch;
+	if (familyId < kSystemFamilyBase || familyId >= kSystemFamilyBase + kSlotCount) return nullptr;
+	return fontBytesForSlotStyle(familyId - kSystemFamilyBase, classifyFontStyle(weight, italic), length);
+}
+
+template <typename Provider = gea::framework::graphics::RuntimeFontProvider>
+constexpr Provider makeProvider()
+{
+	Provider p{};
+	p.lookupFamily = lookupFamily;
+	p.familyName = familyName;
+	p.fontBytes = fontBytes;
+	if constexpr (requires(Provider &q) { q.fontBytesForStyle = fontBytesForStyle; }) {
+		p.fontBytesForStyle = fontBytesForStyle;
+	} else if constexpr (requires(Provider &q) { q.fontBytesForStyle = fontBytesForStyleItalic; }) {
+		p.fontBytesForStyle = fontBytesForStyleItalic;
+	}
+	return p;
+}
+
+// Constant-initialized so early-priority static constructors can register it
+// before default-priority C++ static CSS registrations execute.
+inline constexpr gea::framework::graphics::RuntimeFontProvider kProvider = makeProvider();
 
 }  // namespace detail
 
 // Optional override for unit tests or custom search paths.
+inline void addSearchPath(int slot, int style, const std::string &path)
+{
+	if (slot < 0 || slot >= kSlotCount || style < 0 || style >= kStyleCount || path.empty()) return;
+	auto &s = detail::state();
+	s.customPaths[slot][style].push_back(path);
+	s.slots[slot][style].attempted = false;
+	s.slots[slot][style].bytes.clear();
+}
+
 inline void addSearchPath(int slot, const std::string &path)
 {
-	if (slot < 0 || slot >= kSlotCount || path.empty()) return;
-	auto &s = detail::state();
-	s.customPaths[slot].push_back(path);
-	s.slots[slot].attempted = false;
-	s.slots[slot].bytes.clear();
+	addSearchPath(slot, kStyleRegular, path);
+}
+
+inline const std::uint8_t *fontBytesForStyle(int familyId, int weight, int stretch, unsigned long *length)
+{
+	return detail::fontBytesForStyle(familyId, weight, stretch, length);
+}
+
+inline const std::uint8_t *fontBytesForStyle(int familyId, int weight, int stretch, bool italic, unsigned long *length)
+{
+	return detail::fontBytesForStyleItalic(familyId, weight, stretch, italic, length);
 }
 
 inline void install()
@@ -227,9 +425,11 @@ inline void shutdown()
 		s.installed = false;
 	}
 	for (int i = 0; i < kSlotCount; ++i) {
-		s.slots[i].attempted = false;
-		s.slots[i].bytes.clear();
-		s.customPaths[i].clear();
+		for (int j = 0; j < kStyleCount; ++j) {
+			s.slots[i][j].attempted = false;
+			s.slots[i][j].bytes.clear();
+			s.customPaths[i][j].clear();
+		}
 	}
 }
 

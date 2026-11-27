@@ -41,13 +41,13 @@ test('defaults keep the sandbox and the existing identity', () => {
   assert.match(desktop, /\[X-Sailjail\]\nOrganizationName=org\.geastack\nApplicationName=probe_app\nPermissions=\n$/)
 })
 
-test('density defaults to auto: panel-derived on ARM, 1 on the emulator', () => {
+test('density defaults to auto: panel-derived on ARM and the i486 emulator', () => {
   const config = read()
   assert.equal(config.devicePixelRatio, 'auto')
   // 0 tells the executable to derive an integer DPR from the panel.
   assert.deepEqual(sailfishDensity(config, 'aarch64'), { runtime: 0, fontRatios: [2, 3] })
   assert.deepEqual(sailfishDensity(config, 'armv7hl'), { runtime: 0, fontRatios: [2, 3] })
-  assert.deepEqual(sailfishDensity(config, 'i486'), { runtime: 1, fontRatios: [1] })
+  assert.deepEqual(sailfishDensity(config, 'i486'), { runtime: 0, fontRatios: [2, 3] })
 })
 
 test('an explicit density is used on every architecture', () => {
@@ -98,14 +98,26 @@ test('system libraries and pkg-config modules are plain names', () => {
   assert.throws(() => read({ sailfish: { pkgConfigModules: ['a b'] } }), /invalid module/)
 })
 
-test('spec lists pkg-config modules as BuildRequires', () => {
+test('spec lists URL, pkg-config BuildRequires, strip step, and changelog', () => {
   const spec = rpmSpec(read({ sailfish: { pkgConfigModules: ['glib-2.0', 'zlib'] } }))
+  assert.match(spec, /^Name: harbour-gea-probe-app\nVersion: 1\.2\.3\nRelease: 1\nSummary: Gea Probe for Sailfish OS\nLicense: MIT\nURL: https:\/\/github\.com\/geastack\/linux\n/)
   assert.match(spec, /BuildRequires: pkgconfig\(libcurl\)\nBuildRequires: pkgconfig\(gio-2\.0\)\nBuildRequires: pkgconfig\(glib-2\.0\)\nBuildRequires: pkgconfig\(zlib\)\n\n%description/)
-  assert.match(spec, /^Name: harbour-gea-probe-app\nVersion: 1\.2\.3\n/)
+  assert.match(spec, /%install\n%make_install\n%\{!\?__debug_package:strip --strip-all %\{buildroot\}%\{_bindir\}\/%\{name\}\}\n/)
+  assert.match(spec, /%changelog\n\* Wed Jan 01 2025 GeaStack <dev@geastack\.dev> - 1\.2\.3-1\n- Package 1\.2\.3 for Sailfish OS\.\n$/)
+})
+
+test('spec URL resolves from sailfish.url, homepage, or repository and validates syntax', () => {
+  assert.equal(read({}, { homepage: 'https://example.org/probe' }).rpmUrl, 'https://example.org/probe')
+  assert.equal(read({}, { repository: { url: 'git+https://github.com/example/probe.git' } }).rpmUrl, 'https://github.com/example/probe')
+  assert.equal(read({ sailfish: { url: 'https://custom.example/app' } }, { homepage: 'https://example.org/probe' }).rpmUrl, 'https://custom.example/app')
+  assert.throws(() => read({ sailfish: { url: 'ftp://example.org/app' } }), /gea\.sailfish\.url/)
+  assert.throws(() => read({ sailfish: { url: 'https://example.org/%{evil}' } }), /gea\.sailfish\.url/)
 })
 
 test('prerelease versions sort before the release in RPM', () => {
-  assert.equal(read({}, { version: '1.2.3-beta-2' }).rpmVersion, '1.2.3~beta.2')
+  const config = read({}, { version: '1.2.3-beta-2' })
+  assert.equal(config.rpmVersion, '1.2.3~beta.2')
+  assert.match(rpmSpec(config), / - 1\.2\.3~beta\.2-1\n/)
 })
 
 if (failures) {

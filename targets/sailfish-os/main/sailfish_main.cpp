@@ -91,7 +91,7 @@ void installAppLauncherPlatform(const char *currentAppId);
 namespace {
 
 // The app's DPR: GEA_SAILFISH_DPR, otherwise the build's default. 0 means
-// "auto" (the default on ARM phone builds, see config.mjs sailfishDensity).
+// "auto" (the default on every architecture, see config.mjs sailfishDensity).
 double devicePixelRatio()
 {
 	return gea::sailfish::parseEnvDpr(std::getenv("GEA_SAILFISH_DPR"), GEA_SAILFISH_DEFAULT_DPR);
@@ -400,6 +400,18 @@ void geaRetireNativeProcess() noexcept {
 struct GeaNativeTerminationGuard {
  ~GeaNativeTerminationGuard(){geaRetireNativeProcess();}
 };
+
+// Install the Sailfish system TTF font provider before default-priority (65535)
+// C++ static constructors (such as GeaPluginCppPreludeRegistration) execute, so
+// statically compiled `font-family:` CSS rules resolve system TTF families
+// instead of latching -1 (the 8x16 bitmap fallback) before main() runs.
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((constructor(200)))
+void installSailfishSystemFontsEarly()
+{
+	gea::sailfish::fonts::install();
+}
+#endif
 }
 
 int main(int argc, char **argv)
